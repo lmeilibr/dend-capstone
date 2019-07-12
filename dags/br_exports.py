@@ -25,7 +25,7 @@ default_args = {
     'catchup': True
 }
 
-dag = DAG('brazil_exp_imp_etl_v10',
+dag = DAG('brazil_exp_imp_etl_v12',
           default_args=default_args,
           description='Load and transform data in MySQL with Airflow',
           schedule_interval='@yearly'
@@ -130,13 +130,13 @@ def init_db():
 def stg_imports_to_db(**context):
     year = context["execution_date"].year
     path = os.path.join(ROOT_PATH, 'IMP', f'IMP_{year}.csv')
-    insert_into_db(path, dal.stg_import, prep_table, get_imp_exp_row, truncate=False)
+    insert_into_db(path, dal.stg_import, prep_imp_exp, get_imp_exp_row, truncate=False)
 
 
 def stg_exports_to_db(**context):
     year = context["execution_date"].year
     path = os.path.join(ROOT_PATH, 'EXP', f'EXP_{year}.csv')
-    insert_into_db(path, dal.stg_export, prep_table, get_imp_exp_row, truncate=False)
+    insert_into_db(path, dal.stg_export, prep_imp_exp, get_imp_exp_row, truncate=False)
 
 
 def stg_ncm_to_db():
@@ -204,6 +204,17 @@ def prep_trucks(filepath, row_getter=None):
             new_table.append(row)
         return new_table
 
+def prep_imp_exp(filepath, row_func):
+    with open(filepath, encoding='latin1') as data:
+        table = data.readlines()
+        rows = []
+        for line in table[1:]:
+            line = line.encode("ascii", "ignore").decode('utf-8')
+            fields = [ln.replace('"', '') for ln in line.split(';')]
+            row = row_func(fields)
+            if row:
+                rows.append(row)
+        return rows
 
 def prep_table(filepath, row_func):
     with open(filepath, encoding='latin1') as data:
@@ -365,12 +376,6 @@ download_trucks = PythonOperator(
     python_callable=truck_downloads
 )
 
-init_database = PythonOperator(
-    task_id='init_db',
-    dag=dag,
-    python_callable=init_db
-)
-
 stg_imports = PythonOperator(
     task_id='stg_import',
     dag=dag,
@@ -432,29 +437,13 @@ end_operator = PythonOperator(
     python_callable=end_etl
 )
 
-start_operator >> download_exports
-start_operator >> download_imports
+start_operator >> download_exports >> stg_exports >> end_operator
+start_operator >> download_imports >> stg_imports >> end_operator
+start_operator >> download_trucks >> stg_trucks >> end_operator
 start_operator >> download_aux
-start_operator >> download_trucks
-download_exports >> init_database
-download_imports >> init_database
-download_aux >> init_database
-download_trucks >> init_database
-init_database >> stg_imports
-init_database >> stg_exports
-init_database >> stg_trucks
-init_database >> stg_ncm
-init_database >> stg_ncm_sh
-init_database >> stg_pais
-init_database >> stg_pais_bloco
-init_database >> stg_urf
-init_database >> stg_via
-stg_imports >> end_operator
-stg_exports >> end_operator
-stg_trucks >> end_operator
-stg_ncm >> end_operator
-stg_ncm_sh >> end_operator
-stg_pais >> end_operator
-stg_pais_bloco >> end_operator
-stg_urf >> end_operator
-stg_via >> end_operator
+download_aux >> stg_ncm >> end_operator
+download_aux >> stg_ncm_sh >> end_operator
+download_aux >> stg_pais >> end_operator
+download_aux >> stg_pais_bloco >> end_operator
+download_aux >> stg_urf >> end_operator
+download_aux >> stg_via >> end_operator

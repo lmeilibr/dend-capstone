@@ -9,6 +9,7 @@ import json
 from configparser import ConfigParser
 from functions.create_tables import dal
 
+
 config = ConfigParser()
 config.read('credentials.cfg')
 
@@ -16,7 +17,7 @@ ROOT_PATH = 'data'
 
 default_args = {
     'owner': 'meili',
-    'depends_on_past': False,
+    'depends_on_past': True,
     'start_date': datetime(1997, 1, 1),
     'end_date': datetime(2018, 12, 1),
     'retries': 1,
@@ -24,7 +25,7 @@ default_args = {
     'catchup': True
 }
 
-dag = DAG('brazil_exp_imp_etl_v5',
+dag = DAG('brazil_exp_imp_etl_v10',
           default_args=default_args,
           description='Load and transform data in MySQL with Airflow',
           schedule_interval='@yearly'
@@ -129,13 +130,23 @@ def init_db():
 def stg_imports_to_db(**context):
     year = context["execution_date"].year
     path = os.path.join(ROOT_PATH, 'IMP', f'IMP_{year}.csv')
-    insert_into_db(path, dal.stg_import, prep_table)
+    insert_into_db(path, dal.stg_import, prep_table, get_imp_exp_row, truncate=False)
 
 
 def stg_exports_to_db(**context):
     year = context["execution_date"].year
     path = os.path.join(ROOT_PATH, 'EXP', f'EXP_{year}.csv')
-    insert_into_db(path, dal.stg_export, prep_table)
+    insert_into_db(path, dal.stg_export, prep_table, get_imp_exp_row, truncate=False)
+
+
+def stg_ncm_to_db():
+    path = os.path.join(ROOT_PATH, 'AUX', 'NCM.csv')
+    insert_into_db(path, dal.stg_ncm, prep_table, get_ncm_row)
+
+
+def stg_ncm_sh_to_db():
+    path = os.path.join(ROOT_PATH, 'AUX', 'NCM_SH.csv')
+    insert_into_db(path, dal.stg_ncm_sh, prep_table, get_ncm_sh_row)
 
 
 def stg_trucks_to_db():
@@ -145,14 +156,37 @@ def stg_trucks_to_db():
     insert_into_db(sales, dal.stg_truck_sales, prep_trucks)
 
 
-def insert_into_db(path, table, prep):
-    data_dict = prep(path)
+def stg_pais_to_db():
+    path = os.path.join(ROOT_PATH, 'AUX', 'PAIS.csv')
+    insert_into_db(path, dal.stg_pais, prep_table, get_pais_row)
+
+
+def stg_pais_bloco_to_db():
+    path = os.path.join(ROOT_PATH, 'AUX', 'PAIS_BLOCO.csv')
+    insert_into_db(path, dal.stg_pais_bloco, prep_table, get_pais_bloco_row)
+
+
+def stg_urf_to_db():
+    path = os.path.join(ROOT_PATH, 'AUX', 'URF.csv')
+    insert_into_db(path, dal.stg_urf, prep_table, get_urf_row)
+
+
+def stg_via_to_db():
+    path = os.path.join(ROOT_PATH, 'AUX', 'VIA.csv')
+    insert_into_db(path, dal.stg_via, prep_table, get_via_row)
+
+
+def insert_into_db(path, table, prep, row_getter=None, truncate=True):
+    data_dict = prep(path, row_getter)
     insert_query = table.insert()
     init_db()
+    # truncate table
+    if truncate:
+        dal.connection.execute(f"TRUNCATE {table.name}")
     batch = []
     for row in data_dict:
         batch.append(row)
-        if len(batch) == 5000:
+        if len(batch) == 2500:
             dal.connection.execute(insert_query, batch)
             batch = []
             logging.info('5000 records inserted')
@@ -160,7 +194,7 @@ def insert_into_db(path, table, prep):
     logging.info(len(batch), 'records inserted')
 
 
-def prep_trucks(filepath):
+def prep_trucks(filepath, row_getter=None):
     with open(filepath) as data:
         table = json.load(data)
         new_table = []
@@ -171,102 +205,256 @@ def prep_trucks(filepath):
         return new_table
 
 
-def prep_table(filepath):
-    with open(filepath) as data:
+def prep_table(filepath, row_func):
+    with open(filepath, encoding='latin1') as data:
         table = data.readlines()
         rows = []
         for line in table[1:]:
-            fields = line.replace('"', '').split(";")
-            row = {'co_ano': fields[0],
-                   'co_mes': fields[1],
-                   'co_ncm': fields[2],
-                   'co_unid': fields[3],
-                   'co_pais': fields[4],
-                   'sg_uf_ncm': fields[5],
-                   'co_via': fields[6],
-                   'co_urf': fields[7],
-                   'qt_estat': fields[8],
-                   'kg_liquido': fields[9],
-                   'vl_fob': fields[10]
-                   }
-            rows.append(row)
+            line = line.encode("ascii", "ignore").decode('utf-8')
+            fields = [ln.replace('"', '') for ln in line.split(';"')]
+            row = row_func(fields)
+            if row:
+                rows.append(row)
         return rows
+
+
+def get_imp_exp_row(fields):
+    if len(fields) != 11:
+        return None
+    row = {'co_ano': fields[0],
+           'co_mes': fields[1],
+           'co_ncm': fields[2],
+           'co_unid': fields[3],
+           'co_pais': fields[4],
+           'sg_uf_ncm': fields[5],
+           'co_via': fields[6],
+           'co_urf': fields[7],
+           'qt_estat': fields[8],
+           'kg_liquido': fields[9],
+           'vl_fob': fields[10]
+           }
+    return row
+
+
+def get_ncm_row(fields):
+    # msg = 'row with ' + str(len(fields)) + ' fields'
+    # logging.info(msg)
+    if len(fields) != 14:
+        return None
+    row = {
+        "co_ncm": fields[0],
+        "co_unid": fields[1],
+        "co_sh6": fields[2],
+        "co_ppe": fields[3],
+        "co_ppi": fields[4],
+        "co_fat_agreg": fields[5],
+        # "co_cuci_item": fields[6],
+        "co_cgce_n3": fields[7],
+        "co_siit": fields[8],
+        # "co_isic4": fields[9],
+        "co_exp_subset": fields[10],
+        # "no_ncm_por": fields[11],
+        # "no_ncm_esp": fields[12],
+        # "no_ncm_ing": fields[13],
+    }
+    return row
+
+
+def get_ncm_sh_row(fields):
+    if len(fields[8]) > 15:
+        logging.info(fields[8])
+        return None
+    row = {
+        "co_sh6": fields[0],
+        # "no_sh6_por": fields[1],
+        "no_sh6_esp": fields[2],
+        "no_sh6_ing": fields[3],
+        "co_sh4": fields[4],
+        "no_sh4_por": fields[5],
+        "no_sh4_esp": fields[6],
+        "no_sh4_ing": fields[7],
+        "co_sh2": fields[8],
+        "no_sh2_por": fields[9],
+        "no_sh2_esp": fields[10],
+        "no_sh2_ing": fields[11],
+        "co_ncm_secrom": fields[12],
+        "no_sec_por": fields[13],
+        "no_sec_esp": fields[14],
+        "no_sec_ing": fields[15],
+    }
+    return row
+
+
+def get_pais_row(fields):
+    if len(fields) != 6:
+        logging.info(fields)
+        return None
+    row = {
+        "co_pais": fields[0],
+        "co_pais_ison3": fields[1],
+        "co_pais_isoa3": fields[2],
+        "no_pais": fields[3],
+        "no_pais_ing": fields[4],
+        "no_pais_esp": fields[5]
+    }
+    return row
+
+
+def get_pais_bloco_row(fields):
+    if len(fields) != 5:
+        logging.info(fields)
+        return None
+    row = {
+        "co_pais": fields[0],
+        "co_bloco": fields[1],
+        "no_bloco": fields[2],
+        "no_bloco_ing": fields[3],
+        "no_bloco_esp": fields[4],
+    }
+    return row
+
+
+def get_urf_row(fields):
+    row = {
+        "co_urf": fields[0],
+        "no_urf": fields[1]
+    }
+    return row
+
+
+def get_via_row(fields):
+    row = {
+        "co_via": fields[0],
+        "no_via": fields[1]
+    }
+    return row
 
 
 def end_etl():
     logging.info('end etl!')
 
 
-# start_operator = PythonOperator(
-#     task_id='begin_execution',
-#     dag=dag,
-#     python_callable=begin
-# )
-# download_exports = PythonOperator(
-#     task_id='download_exports',
-#     dag=dag,
-#     provide_context=True,
-#     python_callable=download_exports
-# )
-#
-# download_imports = PythonOperator(
-#     task_id='download_imports',
-#     dag=dag,
-#     provide_context=True,
-#     python_callable=download_imports
-# )
-#
-# download_aux = PythonOperator(
-#     task_id='download_aux',
-#     dag=dag,
-#     python_callable=aux_downloads
-# )
-#
-# download_trucks = PythonOperator(
-#     task_id='download_trucks',
-#     dag=dag,
-#     python_callable=truck_downloads
-# )
-#
-# init_database = PythonOperator(
-#     task_id='init_db',
-#     dag=dag,
-#     python_callable=init_db
-# )
-#
-# stg_imports = PythonOperator(
-#     task_id='stg_import',
-#     dag=dag,
-#     provide_context=True,
-#     python_callable=stg_imports_to_db
-# )
-#
-# stg_export = PythonOperator(
-#     task_id='stg_export',
-#     dag=dag,
-#     provide_context=True,
-#     python_callable=stg_exports_to_db
-# )
+start_operator = PythonOperator(
+    task_id='begin_execution',
+    dag=dag,
+    python_callable=begin
+)
+download_exports = PythonOperator(
+    task_id='download_exports',
+    dag=dag,
+    provide_context=True,
+    python_callable=download_exports
+)
+
+download_imports = PythonOperator(
+    task_id='download_imports',
+    dag=dag,
+    provide_context=True,
+    python_callable=download_imports
+)
+
+download_aux = PythonOperator(
+    task_id='download_aux',
+    dag=dag,
+    python_callable=aux_downloads
+)
+
+download_trucks = PythonOperator(
+    task_id='download_trucks',
+    dag=dag,
+    python_callable=truck_downloads
+)
+
+init_database = PythonOperator(
+    task_id='init_db',
+    dag=dag,
+    python_callable=init_db
+)
+
+stg_imports = PythonOperator(
+    task_id='stg_import',
+    dag=dag,
+    provide_context=True,
+    python_callable=stg_imports_to_db
+)
+
+stg_exports = PythonOperator(
+    task_id='stg_export',
+    dag=dag,
+    provide_context=True,
+    python_callable=stg_exports_to_db
+)
 
 stg_trucks = PythonOperator(
     task_id='stg_trucks',
     dag=dag,
     python_callable=stg_trucks_to_db
 )
-#
-# end_operator = PythonOperator(
-#     task_id='end_etl',
-#     dag=dag,
-#     python_callable=end_etl
-# )
 
-# start_operator >> download_exports
-# start_operator >> download_imports
-# start_operator >> download_aux
-# start_operator >> download_trucks
-# download_exports >> init_database
-# download_imports >> init_database
-# download_aux >> init_database
-# download_trucks >> init_database
-# init_database >> stg_imports
-# stg_imports >> end_operator
+stg_ncm = PythonOperator(
+    task_id='stg_ncm',
+    dag=dag,
+    python_callable=stg_ncm_to_db
+)
+
+stg_ncm_sh = PythonOperator(
+    task_id='stg_ncm_sh',
+    dag=dag,
+    python_callable=stg_ncm_sh_to_db
+)
+
+stg_pais = PythonOperator(
+    task_id='stg_pais',
+    dag=dag,
+    python_callable=stg_pais_to_db
+)
+
+stg_pais_bloco = PythonOperator(
+    task_id='stg_pais_bloco',
+    dag=dag,
+    python_callable=stg_pais_bloco_to_db
+)
+stg_urf = PythonOperator(
+    task_id='stg_urf',
+    dag=dag,
+    python_callable=stg_urf_to_db
+)
+stg_via = PythonOperator(
+    task_id='stg_via',
+    dag=dag,
+    python_callable=stg_via_to_db
+)
+
+
+end_operator = PythonOperator(
+    task_id='end_etl',
+    dag=dag,
+    python_callable=end_etl
+)
+
+start_operator >> download_exports
+start_operator >> download_imports
+start_operator >> download_aux
+start_operator >> download_trucks
+download_exports >> init_database
+download_imports >> init_database
+download_aux >> init_database
+download_trucks >> init_database
+init_database >> stg_imports
+init_database >> stg_exports
+init_database >> stg_trucks
+init_database >> stg_ncm
+init_database >> stg_ncm_sh
+init_database >> stg_pais
+init_database >> stg_pais_bloco
+init_database >> stg_urf
+init_database >> stg_via
+stg_imports >> end_operator
+stg_exports >> end_operator
+stg_trucks >> end_operator
+stg_ncm >> end_operator
+stg_ncm_sh >> end_operator
+stg_pais >> end_operator
+stg_pais_bloco >> end_operator
+stg_urf >> end_operator
+stg_via >> end_operator

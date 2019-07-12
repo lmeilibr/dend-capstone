@@ -82,20 +82,20 @@ class DataAccessLayer:
 
     stg_ncm_sh = Table('stg_ncm_sh',
                        metadata,
-                       Column('ncm_sh_id', Integer()),
+                       Column('ncm_sh_id', Integer(), primary_key=True),
                        Column('co_sh6', String(6), unique=True),
-                       Column('no_sh6_por', String(255)),
-                       Column('no_sh6_esp', String(255)),
-                       Column('no_sh6_ing', String(255)),
+                       Column('no_sh6_por', String(300)),
+                       Column('no_sh6_esp', String(300)),
+                       Column('no_sh6_ing', String(300)),
                        Column('co_sh4', String(4)),
-                       Column('no_sh4_por', String(255)),
-                       Column('no_sh4_esp', String(255)),
-                       Column('no_sh4_ing', String(255)),
-                       Column('co_sh2', String(2)),
+                       Column('no_sh4_por', String(400)),
+                       Column('no_sh4_esp', String(300)),
+                       Column('no_sh4_ing', String(300)),
+                       Column('co_sh2', String(15)),
                        Column('no_sh2_por', String(255)),
                        Column('no_sh2_esp', String(255)),
                        Column('no_sh2_ing', String(255)),
-                       Column('co_ncm_secrom', String(1)),
+                       Column('co_ncm_secrom', String(5)),
                        Column('no_sec_por', String(255)),
                        Column('no_sec_esp', String(255)),
                        Column('no_sec_ing', String(255))
@@ -115,7 +115,7 @@ class DataAccessLayer:
     stg_pais_bloco = Table('stg_pais_bloco',
                            metadata,
                            Column('pais_bloco_id', Integer(), primary_key=True),
-                           Column('co_pais', String(3), unique=True),
+                           Column('co_pais', String(3)),
                            Column('co_bloco', Integer()),
                            Column('no_bloco', String(100)),
                            Column('no_bloco_ing', String(100)),
@@ -134,6 +134,5 @@ class DataAccessLayer:
                     Column('co_via', String(2), unique=True),
                     Column('no_via', String(32))
                     )
-
 
 dal = DataAccessLayer()

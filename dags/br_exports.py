@@ -7,8 +7,10 @@ from datetime import timedelta
 import requests
 import json
 from configparser import ConfigParser
-from functions.create_tables import dal
-
+from dags.functions.create_tables import dal
+from dags.functions.etl_queries import (load_dim_date, load_dim_country, load_dim_mode, load_dim_port,
+                                        load_dim_product, load_dim_region, load_fact_truck, load_fact_trading,
+                                        check_table_rows)
 
 config = ConfigParser()
 config.read('credentials.cfg')
@@ -17,15 +19,15 @@ ROOT_PATH = 'data'
 
 default_args = {
     'owner': 'meili',
-    'depends_on_past': True,
+    'depends_on_past': False,
     'start_date': datetime(1997, 1, 1),
-    'end_date': datetime(2018, 12, 1),
+    'end_date': datetime(2000, 12, 1),
     'retries': 1,
     'retries_delay': timedelta(minutes=1),
     'catchup': True
 }
 
-dag = DAG('brazil_exp_imp_etl_v12',
+dag = DAG('brazil_exp_imp_etl_v25',
           default_args=default_args,
           description='Load and transform data in MySQL with Airflow',
           schedule_interval='@yearly'
@@ -200,9 +202,12 @@ def prep_trucks(filepath, row_getter=None):
         new_table = []
         for item in table:
             row = dict(date=datetime.strptime(item['data'], '%d/%m/%Y').date(),
-                       value=item['valor'])
+                       year=int(item['data'].split('/')[2]),
+                       month=int(item['data'].split('/')[1]),
+                       units=item['valor'])
             new_table.append(row)
         return new_table
+
 
 def prep_imp_exp(filepath, row_func):
     with open(filepath, encoding='latin1') as data:
@@ -215,6 +220,7 @@ def prep_imp_exp(filepath, row_func):
             if row:
                 rows.append(row)
         return rows
+
 
 def prep_table(filepath, row_func):
     with open(filepath, encoding='latin1') as data:
@@ -240,7 +246,7 @@ def get_imp_exp_row(fields):
            'sg_uf_ncm': fields[5],
            'co_via': fields[6],
            'co_urf': fields[7],
-           'qt_estat': fields[8],
+           # 'qt_estat': fields[8],
            'kg_liquido': fields[9],
            'vl_fob': fields[10]
            }
@@ -264,9 +270,9 @@ def get_ncm_row(fields):
         "co_siit": fields[8],
         # "co_isic4": fields[9],
         "co_exp_subset": fields[10],
-        # "no_ncm_por": fields[11],
-        # "no_ncm_esp": fields[12],
-        # "no_ncm_ing": fields[13],
+        "no_ncm_por": fields[11],
+        "no_ncm_esp": fields[12],
+        "no_ncm_ing": fields[13],
     }
     return row
 
@@ -325,10 +331,10 @@ def get_pais_bloco_row(fields):
     return row
 
 
-def get_urf_row(fields):
+def get_urf_row(fields: list):
     row = {
         "co_urf": fields[0],
-        "no_urf": fields[1]
+        "no_urf": fields[1].split('-')[1].strip()
     }
     return row
 
@@ -341,95 +347,201 @@ def get_via_row(fields):
     return row
 
 
+def load_date():
+    init_db()
+    load_dim_date(dal)
+
+
+def load_mode():
+    init_db()
+    load_dim_mode(dal)
+
+
+def load_port():
+    init_db()
+    load_dim_port(dal)
+
+
+def load_region():
+    init_db()
+    load_dim_region(dal)
+
+
+def load_country():
+    init_db()
+    load_dim_country(dal)
+
+
+def load_product():
+    init_db()
+    load_dim_product(dal)
+
+
+def load_truck():
+    init_db()
+    load_fact_truck(dal)
+
+
+def load_trading(**context):
+    init_db()
+    load_fact_trading(dal, context['execution_date'].year)
+
+
+def check_trading():
+    init_db()
+    check_table_rows(dal, dal.fact_trading)
+
+
+def check_trucks():
+    init_db()
+    check_table_rows(dal, dal.fact_truck)
+
+
 def end_etl():
     logging.info('end etl!')
 
 
-start_operator = PythonOperator(
-    task_id='begin_execution',
+# start_operator = PythonOperator(
+#     task_id='begin_execution',
+#     dag=dag,
+#     python_callable=begin
+# )
+#
+# download_exports = PythonOperator(
+#     task_id='download_exports',
+#     dag=dag,
+#     provide_context=True,
+#     python_callable=download_exports
+# )
+#
+# download_imports = PythonOperator(
+#     task_id='download_imports',
+#     dag=dag,
+#     provide_context=True,
+#     python_callable=download_imports
+# )
+#
+# download_aux = PythonOperator(
+#     task_id='download_aux',
+#     dag=dag,
+#     python_callable=aux_downloads
+# )
+#
+# download_trucks = PythonOperator(
+#     task_id='download_trucks',
+#     dag=dag,
+#     python_callable=truck_downloads
+# )
+#
+# stg_imports = PythonOperator(
+#     task_id='stg_import',
+#     dag=dag,
+#     provide_context=True,
+#     python_callable=stg_imports_to_db
+# )
+#
+# stg_exports = PythonOperator(
+#     task_id='stg_export',
+#     dag=dag,
+#     provide_context=True,
+#     python_callable=stg_exports_to_db
+# )
+#
+# stg_trucks = PythonOperator(
+#     task_id='stg_trucks',
+#     dag=dag,
+#     python_callable=stg_trucks_to_db
+# )
+#
+# stg_ncm = PythonOperator(
+#     task_id='stg_ncm',
+#     dag=dag,
+#     python_callable=stg_ncm_to_db
+# )
+#
+# stg_ncm_sh = PythonOperator(
+#     task_id='stg_ncm_sh',
+#     dag=dag,
+#     python_callable=stg_ncm_sh_to_db
+# )
+#
+# stg_pais = PythonOperator(
+#     task_id='stg_pais',
+#     dag=dag,
+#     python_callable=stg_pais_to_db
+# )
+#
+# stg_urf = PythonOperator(
+#     task_id='stg_urf',
+#     dag=dag,
+#     python_callable=stg_urf_to_db
+# )
+# stg_via = PythonOperator(
+#     task_id='stg_via',
+#     dag=dag,
+#     python_callable=stg_via_to_db
+# )
+#
+# dim_date = PythonOperator(
+#     task_id='load_dim_date',
+#     dag=dag,
+#     python_callable=load_date
+# )
+#
+# dim_mode = PythonOperator(
+#     task_id='load_dim_mode',
+#     dag=dag,
+#     python_callable=load_mode
+# )
+#
+# dim_port = PythonOperator(
+#     task_id='load_dim_port',
+#     dag=dag,
+#     python_callable=load_port
+# )
+#
+# dim_region = PythonOperator(
+#     task_id='load_dim_region',
+#     dag=dag,
+#     python_callable=load_region
+# )
+#
+# dim_country = PythonOperator(
+#     task_id='load_dim_country',
+#     dag=dag,
+#     python_callable=load_country
+# )
+#
+# dim_product = PythonOperator(
+#     task_id='load_dim_product',
+#     dag=dag,
+#     python_callable=load_product
+# )
+
+fact_truck = PythonOperator(
+    task_id='load_fact_truck',
     dag=dag,
-    python_callable=begin
+    python_callable=load_truck
 )
-download_exports = PythonOperator(
-    task_id='download_exports',
+
+fact_trading = PythonOperator(
+    task_id='load_fact_trading',
     dag=dag,
     provide_context=True,
-    python_callable=download_exports
+    python_callable=load_trading
 )
 
-download_imports = PythonOperator(
-    task_id='download_imports',
+check_fact_trading = PythonOperator(
+    task_id='check_fact_trading',
     dag=dag,
-    provide_context=True,
-    python_callable=download_imports
+    python_callable=check_trading
 )
 
-download_aux = PythonOperator(
-    task_id='download_aux',
+check_fact_truck = PythonOperator(
+    task_id='check_fact_truck',
     dag=dag,
-    python_callable=aux_downloads
+    python_callable=check_trucks
 )
-
-download_trucks = PythonOperator(
-    task_id='download_trucks',
-    dag=dag,
-    python_callable=truck_downloads
-)
-
-stg_imports = PythonOperator(
-    task_id='stg_import',
-    dag=dag,
-    provide_context=True,
-    python_callable=stg_imports_to_db
-)
-
-stg_exports = PythonOperator(
-    task_id='stg_export',
-    dag=dag,
-    provide_context=True,
-    python_callable=stg_exports_to_db
-)
-
-stg_trucks = PythonOperator(
-    task_id='stg_trucks',
-    dag=dag,
-    python_callable=stg_trucks_to_db
-)
-
-stg_ncm = PythonOperator(
-    task_id='stg_ncm',
-    dag=dag,
-    python_callable=stg_ncm_to_db
-)
-
-stg_ncm_sh = PythonOperator(
-    task_id='stg_ncm_sh',
-    dag=dag,
-    python_callable=stg_ncm_sh_to_db
-)
-
-stg_pais = PythonOperator(
-    task_id='stg_pais',
-    dag=dag,
-    python_callable=stg_pais_to_db
-)
-
-stg_pais_bloco = PythonOperator(
-    task_id='stg_pais_bloco',
-    dag=dag,
-    python_callable=stg_pais_bloco_to_db
-)
-stg_urf = PythonOperator(
-    task_id='stg_urf',
-    dag=dag,
-    python_callable=stg_urf_to_db
-)
-stg_via = PythonOperator(
-    task_id='stg_via',
-    dag=dag,
-    python_callable=stg_via_to_db
-)
-
 
 end_operator = PythonOperator(
     task_id='end_etl',
@@ -437,13 +549,19 @@ end_operator = PythonOperator(
     python_callable=end_etl
 )
 
-start_operator >> download_exports >> stg_exports >> end_operator
-start_operator >> download_imports >> stg_imports >> end_operator
-start_operator >> download_trucks >> stg_trucks >> end_operator
-start_operator >> download_aux
-download_aux >> stg_ncm >> end_operator
-download_aux >> stg_ncm_sh >> end_operator
-download_aux >> stg_pais >> end_operator
-download_aux >> stg_pais_bloco >> end_operator
-download_aux >> stg_urf >> end_operator
-download_aux >> stg_via >> end_operator
+# start_operator >> download_exports >> stg_exports >> fact_trading
+# start_operator >> download_imports >> stg_imports
+# stg_imports >> dim_region >> fact_trading
+# start_operator >> download_trucks >> stg_trucks
+# start_operator >> download_aux
+# download_aux >> stg_ncm
+# download_aux >> stg_ncm_sh
+# download_aux >> stg_pais >> dim_country >> fact_trading
+# download_aux >> stg_urf >> dim_port >> fact_trading
+# download_aux >> stg_via >> dim_mode >> fact_trading
+# stg_trucks >> dim_date >> fact_truck
+# stg_ncm >> dim_product
+# stg_ncm_sh >> dim_product
+# dim_product >> fact_trading
+fact_trading >> check_fact_trading >> end_operator
+fact_truck >> check_fact_truck >> end_operator

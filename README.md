@@ -10,7 +10,7 @@ The data is public available.
 
 ## Steps
 The steps taken into this ETL can be summarize below:
-
+![ETL](https://github.com/lmeilibr/dend-capstone/blob/master/etl_flow.png "ETL Flow diagram")
 
 ## Technologies
 For this project the technologies chosen were:

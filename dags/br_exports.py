@@ -24,7 +24,7 @@ DEFAULT_ARGS = {
     'owner': 'meili',
     'depends_on_past': False,
     'start_date': datetime(1997, 1, 1),
-    'end_date': datetime(2000, 12, 1),
+    'end_date': datetime(2018, 12, 1),
     'retries': 1,
     'retries_delay': timedelta(minutes=1),
     'catchup': True

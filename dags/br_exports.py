@@ -1,23 +1,26 @@
-from airflow import DAG
+""" ETL Dag for the Brazilian Commerce Statistics """
+import json
 import logging
 import os
-from airflow.operators.python_operator import PythonOperator
+from configparser import ConfigParser
 from datetime import datetime
 from datetime import timedelta
-import requests
-import json
-from configparser import ConfigParser
-from dags.functions.create_tables import dal
-from dags.functions.etl_queries import (load_dim_date, load_dim_country, load_dim_mode, load_dim_port,
-                                        load_dim_product, load_dim_region, load_fact_truck, load_fact_trading,
-                                        check_table_rows)
 
-config = ConfigParser()
-config.read('credentials.cfg')
+import requests
+from airflow import DAG
+from airflow.operators.python_operator import PythonOperator
+
+from dags.functions.create_tables import dal
+from dags.functions.etl_queries import (load_dim_date, load_dim_country, load_dim_mode,
+                                        load_dim_port, load_dim_product, load_dim_region,
+                                        load_fact_truck, load_fact_trading, check_table_rows)
+
+CONFIG = ConfigParser()
+CONFIG.read('credentials.cfg')
 
 ROOT_PATH = 'data'
 
-default_args = {
+DEFAULT_ARGS = {
     'owner': 'meili',
     'depends_on_past': False,
     'start_date': datetime(1997, 1, 1),
@@ -28,13 +31,14 @@ default_args = {
 }
 
 dag = DAG('brazil_exp_imp_etl_v25',
-          default_args=default_args,
+          default_args=DEFAULT_ARGS,
           description='Load and transform data in MySQL with Airflow',
           schedule_interval='@yearly'
           )
 
 
 def begin():
+    """Setup the project download folders"""
     logging.info('it began!')
     paths = [
         ROOT_PATH,
@@ -48,24 +52,28 @@ def begin():
 
 
 def download_exports(**context):
+    """Download export data for a given year (context)"""
     direction = 'EXP'
     root_path = os.path.join(ROOT_PATH, direction)
     abstract_download(direction, root_path, context)
 
 
 def download_imports(**context):
+    """Download import data for a given year (context)"""
     direction = 'IMP'
     root_path = os.path.join(ROOT_PATH, direction)
     abstract_download(direction, root_path, context)
 
 
 def abstract_download(direction, root_path, context):
+    """abstract download function to download imp/exp data"""
     year = context["execution_date"].year
     url = f'http://www.mdic.gov.br/balanca/bd/comexstat-bd/ncm/{direction}_{year}.csv'
     download_url(url, root_path)
 
 
 def download_url(url, root_path):
+    """given a url and a root path, download and saves a file"""
     base_file = os.path.basename(url)
     download_path = os.path.join(root_path, base_file)
     if not os.path.exists(download_path):
@@ -77,6 +85,7 @@ def download_url(url, root_path):
 
 
 def aux_downloads():
+    """auxiliary table download list"""
     root_path = os.path.join(ROOT_PATH, 'AUX')
     aux = ['http://www.mdic.gov.br/balanca/bd/tabelas/NCM.csv',
            'http://www.mdic.gov.br/balanca/bd/tabelas/NCM_SH.csv',
@@ -89,15 +98,8 @@ def aux_downloads():
     [download_url(url, root_path) for url in aux]
 
 
-def validation_downloads():
-    root_path = os.path.join(ROOT_PATH, 'AUX')
-    validation = ['http://www.mdic.gov.br/balanca/bd/comexstat-bd/ncm/EXP_TOTAIS_CONFERENCIA.csv',
-                  'http://www.mdic.gov.br/balanca/bd/comexstat-bd/ncm/IMP_TOTAIS_CONFERENCIA.csv',
-                  ]
-    [download_url(url, root_path) for url in validation]
-
-
 def truck_downloads():
+    """download truck production/sales data"""
     root_path = os.path.join(ROOT_PATH, 'TRUCKS')
     sales = 'http://api.bcb.gov.br/dados/serie/bcdata.sgs.7386/dados?formato=json'
     production = 'http://api.bcb.gov.br/dados/serie/bcdata.sgs.1375/dados?formato=json'
@@ -107,6 +109,7 @@ def truck_downloads():
 
 
 def download_json(name, url, root_path):
+    """abstract function to download a json file"""
     download_path = os.path.join(root_path, name + '.json')
     if not os.path.exists(download_path):
         download = requests.get(url)
@@ -117,14 +120,15 @@ def download_json(name, url, root_path):
 
 
 def init_db():
+    """initialize a database"""
     # Database connection
-    rdbms = config.get('DB', 'rdbms')
-    connector = config.get('DB', 'connector')
-    user = config.get('DB', 'user')
-    password = config.get('DB', 'password')
-    host = config.get('DB', 'host')
-    port = config.get('DB', 'port')
-    database = config.get('DB', 'database')
+    rdbms = CONFIG.get('DB', 'rdbms')
+    connector = CONFIG.get('DB', 'connector')
+    user = CONFIG.get('DB', 'user')
+    password = CONFIG.get('DB', 'password')
+    host = CONFIG.get('DB', 'host')
+    port = CONFIG.get('DB', 'port')
+    database = CONFIG.get('DB', 'database')
     conn_string = f'{rdbms}+{connector}://{user}:{password}@{host}:{port}/{database}'
     dal.db_init(conn_string)
 
@@ -246,7 +250,6 @@ def get_imp_exp_row(fields):
            'sg_uf_ncm': fields[5],
            'co_via': fields[6],
            'co_urf': fields[7],
-           # 'qt_estat': fields[8],
            'kg_liquido': fields[9],
            'vl_fob': fields[10]
            }
@@ -254,8 +257,6 @@ def get_imp_exp_row(fields):
 
 
 def get_ncm_row(fields):
-    # msg = 'row with ' + str(len(fields)) + ' fields'
-    # logging.info(msg)
     if len(fields) != 14:
         return None
     row = {
@@ -265,10 +266,8 @@ def get_ncm_row(fields):
         "co_ppe": fields[3],
         "co_ppi": fields[4],
         "co_fat_agreg": fields[5],
-        # "co_cuci_item": fields[6],
         "co_cgce_n3": fields[7],
         "co_siit": fields[8],
-        # "co_isic4": fields[9],
         "co_exp_subset": fields[10],
         "no_ncm_por": fields[11],
         "no_ncm_esp": fields[12],
@@ -283,7 +282,6 @@ def get_ncm_sh_row(fields):
         return None
     row = {
         "co_sh6": fields[0],
-        # "no_sh6_por": fields[1],
         "no_sh6_esp": fields[2],
         "no_sh6_ing": fields[3],
         "co_sh4": fields[4],
@@ -401,122 +399,122 @@ def end_etl():
     logging.info('end etl!')
 
 
-# start_operator = PythonOperator(
-#     task_id='begin_execution',
-#     dag=dag,
-#     python_callable=begin
-# )
-#
-# download_exports = PythonOperator(
-#     task_id='download_exports',
-#     dag=dag,
-#     provide_context=True,
-#     python_callable=download_exports
-# )
-#
-# download_imports = PythonOperator(
-#     task_id='download_imports',
-#     dag=dag,
-#     provide_context=True,
-#     python_callable=download_imports
-# )
-#
-# download_aux = PythonOperator(
-#     task_id='download_aux',
-#     dag=dag,
-#     python_callable=aux_downloads
-# )
-#
-# download_trucks = PythonOperator(
-#     task_id='download_trucks',
-#     dag=dag,
-#     python_callable=truck_downloads
-# )
-#
-# stg_imports = PythonOperator(
-#     task_id='stg_import',
-#     dag=dag,
-#     provide_context=True,
-#     python_callable=stg_imports_to_db
-# )
-#
-# stg_exports = PythonOperator(
-#     task_id='stg_export',
-#     dag=dag,
-#     provide_context=True,
-#     python_callable=stg_exports_to_db
-# )
-#
-# stg_trucks = PythonOperator(
-#     task_id='stg_trucks',
-#     dag=dag,
-#     python_callable=stg_trucks_to_db
-# )
-#
-# stg_ncm = PythonOperator(
-#     task_id='stg_ncm',
-#     dag=dag,
-#     python_callable=stg_ncm_to_db
-# )
-#
-# stg_ncm_sh = PythonOperator(
-#     task_id='stg_ncm_sh',
-#     dag=dag,
-#     python_callable=stg_ncm_sh_to_db
-# )
-#
-# stg_pais = PythonOperator(
-#     task_id='stg_pais',
-#     dag=dag,
-#     python_callable=stg_pais_to_db
-# )
-#
-# stg_urf = PythonOperator(
-#     task_id='stg_urf',
-#     dag=dag,
-#     python_callable=stg_urf_to_db
-# )
-# stg_via = PythonOperator(
-#     task_id='stg_via',
-#     dag=dag,
-#     python_callable=stg_via_to_db
-# )
-#
-# dim_date = PythonOperator(
-#     task_id='load_dim_date',
-#     dag=dag,
-#     python_callable=load_date
-# )
-#
-# dim_mode = PythonOperator(
-#     task_id='load_dim_mode',
-#     dag=dag,
-#     python_callable=load_mode
-# )
-#
-# dim_port = PythonOperator(
-#     task_id='load_dim_port',
-#     dag=dag,
-#     python_callable=load_port
-# )
-#
-# dim_region = PythonOperator(
-#     task_id='load_dim_region',
-#     dag=dag,
-#     python_callable=load_region
-# )
-#
-# dim_country = PythonOperator(
-#     task_id='load_dim_country',
-#     dag=dag,
-#     python_callable=load_country
-# )
-#
-# dim_product = PythonOperator(
-#     task_id='load_dim_product',
-#     dag=dag,
-#     python_callable=load_product
-# )
+start_operator = PythonOperator(
+    task_id='begin_execution',
+    dag=dag,
+    python_callable=begin
+)
+
+download_exports = PythonOperator(
+    task_id='download_exports',
+    dag=dag,
+    provide_context=True,
+    python_callable=download_exports
+)
+
+download_imports = PythonOperator(
+    task_id='download_imports',
+    dag=dag,
+    provide_context=True,
+    python_callable=download_imports
+)
+
+download_aux = PythonOperator(
+    task_id='download_aux',
+    dag=dag,
+    python_callable=aux_downloads
+)
+
+download_trucks = PythonOperator(
+    task_id='download_trucks',
+    dag=dag,
+    python_callable=truck_downloads
+)
+
+stg_imports = PythonOperator(
+    task_id='stg_import',
+    dag=dag,
+    provide_context=True,
+    python_callable=stg_imports_to_db
+)
+
+stg_exports = PythonOperator(
+    task_id='stg_export',
+    dag=dag,
+    provide_context=True,
+    python_callable=stg_exports_to_db
+)
+
+stg_trucks = PythonOperator(
+    task_id='stg_trucks',
+    dag=dag,
+    python_callable=stg_trucks_to_db
+)
+
+stg_ncm = PythonOperator(
+    task_id='stg_ncm',
+    dag=dag,
+    python_callable=stg_ncm_to_db
+)
+
+stg_ncm_sh = PythonOperator(
+    task_id='stg_ncm_sh',
+    dag=dag,
+    python_callable=stg_ncm_sh_to_db
+)
+
+stg_pais = PythonOperator(
+    task_id='stg_pais',
+    dag=dag,
+    python_callable=stg_pais_to_db
+)
+
+stg_urf = PythonOperator(
+    task_id='stg_urf',
+    dag=dag,
+    python_callable=stg_urf_to_db
+)
+stg_via = PythonOperator(
+    task_id='stg_via',
+    dag=dag,
+    python_callable=stg_via_to_db
+)
+
+dim_date = PythonOperator(
+    task_id='load_dim_date',
+    dag=dag,
+    python_callable=load_date
+)
+
+dim_mode = PythonOperator(
+    task_id='load_dim_mode',
+    dag=dag,
+    python_callable=load_mode
+)
+
+dim_port = PythonOperator(
+    task_id='load_dim_port',
+    dag=dag,
+    python_callable=load_port
+)
+
+dim_region = PythonOperator(
+    task_id='load_dim_region',
+    dag=dag,
+    python_callable=load_region
+)
+
+dim_country = PythonOperator(
+    task_id='load_dim_country',
+    dag=dag,
+    python_callable=load_country
+)
+
+dim_product = PythonOperator(
+    task_id='load_dim_product',
+    dag=dag,
+    python_callable=load_product
+)
 
 fact_truck = PythonOperator(
     task_id='load_fact_truck',
@@ -549,19 +547,19 @@ end_operator = PythonOperator(
     python_callable=end_etl
 )
 
-# start_operator >> download_exports >> stg_exports >> fact_trading
-# start_operator >> download_imports >> stg_imports
-# stg_imports >> dim_region >> fact_trading
-# start_operator >> download_trucks >> stg_trucks
-# start_operator >> download_aux
-# download_aux >> stg_ncm
-# download_aux >> stg_ncm_sh
-# download_aux >> stg_pais >> dim_country >> fact_trading
-# download_aux >> stg_urf >> dim_port >> fact_trading
-# download_aux >> stg_via >> dim_mode >> fact_trading
-# stg_trucks >> dim_date >> fact_truck
-# stg_ncm >> dim_product
-# stg_ncm_sh >> dim_product
-# dim_product >> fact_trading
+start_operator >> download_exports >> stg_exports >> fact_trading
+start_operator >> download_imports >> stg_imports
+stg_imports >> dim_region >> fact_trading
+start_operator >> download_trucks >> stg_trucks
+start_operator >> download_aux
+download_aux >> stg_ncm
+download_aux >> stg_ncm_sh
+download_aux >> stg_pais >> dim_country >> fact_trading
+download_aux >> stg_urf >> dim_port >> fact_trading
+download_aux >> stg_via >> dim_mode >> fact_trading
+stg_trucks >> dim_date >> fact_truck
+stg_ncm >> dim_product
+stg_ncm_sh >> dim_product
+dim_product >> fact_trading
 fact_trading >> check_fact_trading >> end_operator
 fact_truck >> check_fact_truck >> end_operator

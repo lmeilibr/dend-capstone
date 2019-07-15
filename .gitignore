@@ -1,6 +1,5 @@
 data/
 *.pyc
-credentials.cfg
 .idea
 .mypy_cache/
 .virtualenvs/

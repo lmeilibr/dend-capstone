@@ -140,17 +140,17 @@ fact_trading
 
 ## Addressing Other Scenarios:
 
-###The data was increased by 100x.
+### The data was increased by 100x.
 
 With data increasing by 100x, performance and storage space would be affected. In this case, 
 moving the source data to an S3 bucket on AWS would help in this scalability.
 
-###The pipelines would be run on a daily basis by 7 am every day.
+### The pipelines would be run on a daily basis by 7 am every day.
 
 With pipelines running on a daily basis, some smart choices should be made. Truncating tables shall be 
 substituted by an incremental load. This would save some time and a lot of bandwith.
 
-###The database needed to be accessed by 100+ people.
+### The database needed to be accessed by 100+ people.
 With data needing to be accessed by 100+ people, a clustered Database would be an ideal solution, 
 as replication (read-only) nodes would distributed the demand for data. For this case, moving from MySQL to Redshift 
 would be an alternative, but costs calculation would be helpful to support this solution.

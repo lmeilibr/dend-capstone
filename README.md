@@ -105,6 +105,7 @@ dim_product
 |section     |string|section name in english |
 
 dim_region
+
 |field       |type  |description             |
 |------------|------|------------------------|
 |region_sk   |int   |surrogate key           |

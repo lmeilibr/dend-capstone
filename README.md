@@ -7,17 +7,34 @@ This initial version includes data for imported and exported goods on a monthly 
 with the series initiating in 1997. Another dataset is the truck production and sales statistics, also on a monthly basis,
 with sales beginning in 1990 and production in 1993.<br>
 The data is public available.
+### Queries that this Data Model could answer:
+- Trends in exports/imports over the years by products
+- Who are the main Brazilian importers and exporters?
+- How imports of a specific product(s) could help predict the production of trucks? 
 
 ## Technologies
 For this project the technologies chosen were:
-- Airflow: For ETL orchestration
+- Airflow: For ETL orchestration of many many tasks
 - SQLAlchemy: A framework to move data from Python to any other RDBMS. This lowers the dependency of the project to a 
 single RDBMS, making it easy to change between difference RDBMS vendors in the future. 
-- MySQL: The Relational Database Management System of choice.
+- MySQL: The Relational Database Management System of choice. Open source, simple to configure and 
+powerful enough for our needs
+
+## Project Setup
+*`It's assumed that AIRFLOW is already configured in your environment`<br>*
+
+First, install the project dependecies<br>
+
+`pip install -r requirements.txt` <br>
+
+Second, configure a user and database into mysql according to the variables in the credentials.cfg file
+
+Third, run the dag through the Ariflow GUI
 
 ## Steps
 The steps taken into this ETL can be summarize below:
 ![ETL](https://github.com/lmeilibr/dend-capstone/blob/master/etl_flow.png "ETL Flow diagram")
+
 
 ## Data Sources:
 For the import and export data, the link to the csv files can be found here:<br>

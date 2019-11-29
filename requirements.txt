@@ -1,5 +1,5 @@
 alembic==0.9.10
-apache-airflow==1.10.3
+apache-airflow==1.10.6
 astroid==2.2.5
 awscli==1.16.188
 Babel==2.7.0
